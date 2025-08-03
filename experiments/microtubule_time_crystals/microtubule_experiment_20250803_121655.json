@@ -1,0 +1,54 @@
+{
+  "structure": {
+    "num_nodes": 4875,
+    "num_edges": 29198.0,
+    "avg_degree": 11.978666666666667,
+    "max_degree": 12.0,
+    "clustering_coeff": 0.5007619047619049,
+    "length_um": 3.0,
+    "protofilaments": 13
+  },
+  "oscillations": {
+    "initial_freq_range_mhz": [
+      1.040618658065796,
+      99.93567657470703
+    ],
+    "noisy_freq_range_mhz": [
+      0.9663233160972595,
+      99.98493194580078
+    ],
+    "coherent_fraction": 0.3,
+    "num_oscillators": 4875
+  },
+  "simulation": {
+    "duration_ms": 5.0,
+    "sampling_rate_mhz": 0.5,
+    "num_samples": 2500,
+    "num_oscillators": 4875,
+    "simulation_time_sec": 0.00012803077697753906,
+    "samples_per_second": 19526554.934823092
+  },
+  "coherence": {
+    "phase_coherence": 0.5,
+    "spectral_coherence": {
+      "theta": 0.3,
+      "alpha": 0.2,
+      "beta": 0.1,
+      "gamma": 0.1
+    },
+    "coherence_analysis_success": false,
+    "error": "module 'mlx.core' has no attribute 'angle'"
+  },
+  "eeg_downconversion": {
+    "downconversion_success": false,
+    "error": "[metal::malloc] Resource limit (499000) exceeded."
+  },
+  "conclusions": {
+    "experiment_duration_sec": 28.0117449760437,
+    "microtubule_nodes": 4875,
+    "oscillation_coherence": 0.5,
+    "eeg_downconversion_viable": false,
+    "apple_silicon_performance": 19526554.934823092,
+    "time_crystal_evidence": 0.5
+  }
+}
