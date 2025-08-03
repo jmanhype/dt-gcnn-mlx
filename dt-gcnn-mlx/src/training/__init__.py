@@ -28,11 +28,11 @@ class DT_GCNN_Trainer:
     def train_step(self, anchor, positive, negative, labels):
         """Perform one training step"""
         
-        def loss_fn():
-            # Forward passes
-            logits_a, z_anchor = self.model(anchor)
-            _, z_pos = self.model(positive)
-            _, z_neg = self.model(negative)
+        def loss_fn(params):
+            # Forward passes with embeddings
+            logits_a, z_anchor = self.model(anchor, return_embeddings=True)
+            _, z_pos = self.model(positive, return_embeddings=True)
+            _, z_neg = self.model(negative, return_embeddings=True)
             
             # Classification loss
             ce_loss = mx.mean(nn.losses.cross_entropy(logits_a, labels))
@@ -57,7 +57,7 @@ class DT_GCNN_Trainer:
         metrics["loss"] = loss
         
         # Compute accuracy
-        logits_a, _ = self.model(anchor)
+        logits_a, _ = self.model(anchor, return_embeddings=True)
         predictions = mx.argmax(logits_a, axis=1)
         accuracy = mx.mean(predictions == labels)
         metrics["accuracy"] = accuracy

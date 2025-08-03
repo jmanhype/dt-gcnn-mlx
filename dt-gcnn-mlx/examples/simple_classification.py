@@ -1,4 +1,4 @@
-"""Simple classification example using DT-GCNN on synthetic data."""
+"""Simple classification example using DT-GCNN on synthetic text data."""
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -11,91 +11,40 @@ import os
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.models.dt_gcnn import DTGCNN
-from src.data.preprocessing import normalize_adjacency_matrix
-from src.training.trainer import DTGCNNTrainer, TrainingConfig
+from src.models import DTGCNN, create_model
+from src.data import create_sample_data, TripletDataset, create_data_loader
 
 
-def generate_synthetic_graph_data(num_samples=1000, num_nodes=20, num_features=8, 
-                                  seq_length=30, num_classes=3):
-    """Generate synthetic graph time series data for classification."""
+def generate_classification_data(num_samples=1000, vocab_size=5000, seq_length=128, num_classes=4):
+    """Generate synthetic text classification data."""
     
-    # Create a simple graph structure (community graph)
-    adj = np.zeros((num_nodes, num_nodes))
-    
-    # Create communities
-    nodes_per_community = num_nodes // num_classes
-    for i in range(num_classes):
-        start = i * nodes_per_community
-        end = (i + 1) * nodes_per_community if i < num_classes - 1 else num_nodes
-        
-        # Dense connections within community
-        for j in range(start, end):
-            for k in range(start, end):
-                if j != k:
-                    adj[j, k] = np.random.rand() * 0.8 + 0.2
-                    
-    # Sparse connections between communities
-    for i in range(num_nodes):
-        for j in range(num_nodes):
-            if adj[i, j] == 0 and i != j:
-                if np.random.rand() < 0.1:
-                    adj[i, j] = np.random.rand() * 0.3
-                    
-    # Make symmetric and add self-loops
-    adj = (adj + adj.T) / 2
-    adj = adj + np.eye(num_nodes)
-    
-    # Normalize adjacency matrix
-    adj = adj / adj.sum(axis=1, keepdims=True)
-    
-    # Generate features and labels
-    features = []
+    data = []
     labels = []
     
     for i in range(num_samples):
-        # Class determines the pattern
         class_id = i % num_classes
         
-        # Base signal for the class
-        t = np.linspace(0, 4 * np.pi, seq_length)
-        
+        # Generate class-specific patterns
         if class_id == 0:
-            # Sinusoidal pattern
-            base_signal = np.sin(t) + 0.5 * np.sin(3 * t)
+            # Short sequences with high frequency words
+            sequence = np.random.randint(1, vocab_size // 4, seq_length // 2).tolist()
+            sequence.extend([0] * (seq_length - len(sequence)))  # Pad with zeros
         elif class_id == 1:
-            # Exponential decay pattern
-            base_signal = np.exp(-t / (2 * np.pi)) * np.cos(2 * t)
+            # Medium sequences with medium frequency words  
+            sequence = np.random.randint(vocab_size // 4, vocab_size // 2, int(seq_length * 0.7)).tolist()
+            sequence.extend([0] * (seq_length - len(sequence)))
+        elif class_id == 2:
+            # Long sequences with low frequency words
+            sequence = np.random.randint(vocab_size // 2, vocab_size, int(seq_length * 0.9)).tolist()
+            sequence.extend([0] * (seq_length - len(sequence)))
         else:
-            # Square wave pattern
-            base_signal = np.sign(np.sin(t)) + 0.3 * np.sign(np.sin(3 * t))
+            # Mixed sequences
+            sequence = np.random.randint(1, vocab_size, seq_length).tolist()
             
-        # Create node features based on community structure
-        node_features = np.zeros((seq_length, num_nodes, num_features))
-        
-        for node_idx in range(num_nodes):
-            # Which community does this node belong to?
-            community = min(node_idx // nodes_per_community, num_classes - 1)
-            
-            # Add community-specific patterns
-            for feat_idx in range(num_features):
-                if community == class_id:
-                    # Strong signal for nodes in the class community
-                    node_features[:, node_idx, feat_idx] = (
-                        base_signal * (1 + 0.1 * feat_idx) + 
-                        np.random.randn(seq_length) * 0.1
-                    )
-                else:
-                    # Weak/random signal for other nodes
-                    node_features[:, node_idx, feat_idx] = (
-                        base_signal * 0.1 + 
-                        np.random.randn(seq_length) * 0.3
-                    )
-                    
-        features.append(node_features)
+        data.append(sequence)
         labels.append(class_id)
         
-    return np.array(features), np.array(labels), adj
+    return np.array(data), np.array(labels)
 
 
 def plot_training_history(history):
@@ -134,37 +83,37 @@ def main():
     np.random.seed(42)
     mx.random.seed(42)
     
-    # Generate synthetic data
-    print("\n1. Generating synthetic graph time series data...")
-    num_samples = 600
-    num_nodes = 20
-    num_features = 8
-    seq_length = 30
-    num_classes = 3
+    # Parameters
+    num_samples = 1000
+    vocab_size = 5000
+    seq_length = 128
+    num_classes = 4
+    batch_size = 32
+    num_epochs = 20
     
-    features, labels, adj = generate_synthetic_graph_data(
+    # Generate synthetic data
+    print("\n1. Generating synthetic text classification data...")
+    data, labels = generate_classification_data(
         num_samples=num_samples,
-        num_nodes=num_nodes,
-        num_features=num_features,
+        vocab_size=vocab_size,
         seq_length=seq_length,
         num_classes=num_classes
     )
     
     print(f"   Generated {num_samples} samples")
-    print(f"   Graph: {num_nodes} nodes, {num_features} features per node")
+    print(f"   Vocabulary size: {vocab_size}")
     print(f"   Sequence length: {seq_length}")
     print(f"   Number of classes: {num_classes}")
     
     # Convert to MLX arrays
-    features = mx.array(features)
+    data = mx.array(data)
     labels = mx.array(labels)
-    adj_matrix = mx.array(adj)
     
     # Split into train/validation sets
     train_size = int(0.8 * num_samples)
-    train_features = features[:train_size]
+    train_data = data[:train_size]
     train_labels = labels[:train_size]
-    val_features = features[train_size:]
+    val_data = data[train_size:]
     val_labels = labels[train_size:]
     
     print(f"\n2. Data split:")
@@ -173,27 +122,19 @@ def main():
     
     # Create model
     print("\n3. Creating DT-GCNN model...")
-    model = DTGCNN(
-        num_nodes=num_nodes,
-        input_dim=num_features,
-        hidden_dims=[32, 64, 128],
-        temporal_kernel_size=3,
-        dilations=[1, 2, 4, 8],
-        num_classes=num_classes,
-        dropout=0.3
+    model = create_model(
+        preset="small",
+        vocab_size=vocab_size,
+        num_classes=num_classes
     )
     
     # Count parameters
-    total_params = sum(p.size for p in model.parameters().values())
+    total_params = sum(param.size if hasattr(param, 'size') else len(param) for param in model.parameters().values())
     print(f"   Total parameters: {total_params:,}")
     
     # Setup training
     print("\n4. Setting up training...")
     optimizer = optim.Adam(learning_rate=0.001)
-    
-    # Training configuration
-    batch_size = 32
-    num_epochs = 50
     
     # Training history
     history = {
@@ -209,27 +150,24 @@ def main():
     
     for epoch in range(num_epochs):
         # Training
-        model.train()
         train_loss = 0
         train_correct = 0
         train_batches = 0
         
         # Mini-batch training
-        for i in range(0, len(train_features), batch_size):
-            end = min(i + batch_size, len(train_features))
-            batch_features = train_features[i:end]
+        for i in range(0, len(train_data), batch_size):
+            end = min(i + batch_size, len(train_data))
+            batch_data = train_data[i:end]
             batch_labels = train_labels[i:end]
             
-            # Forward pass
-            def loss_fn(model, features, adj, labels):
-                logits = model(features, adj, training=True)
-                loss = mx.mean(nn.losses.cross_entropy(logits, labels))
-                return loss, logits
+            # Define loss function for this batch
+            def loss_fn(model, x, y):
+                logits, _ = model(x, return_embeddings=False)
+                return mx.mean(nn.losses.cross_entropy(logits, y))
             
-            # Compute loss and gradients
-            (loss, logits), grads = mx.value_and_grad(loss_fn, has_aux=True)(
-                model, batch_features, adj_matrix, batch_labels
-            )
+            # Get loss and gradients using nn.value_and_grad
+            loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
+            loss, grads = loss_and_grad_fn(model, batch_data, batch_labels)
             
             # Update model
             optimizer.update(model, grads)
@@ -237,23 +175,23 @@ def main():
             
             # Track metrics
             train_loss += loss.item()
+            logits, _ = model(batch_data, return_embeddings=False)
             predictions = mx.argmax(logits, axis=1)
             train_correct += mx.sum(predictions == batch_labels).item()
             train_batches += 1
             
         # Validation
-        model.eval()
         val_loss = 0
         val_correct = 0
         val_batches = 0
         
-        for i in range(0, len(val_features), batch_size):
-            end = min(i + batch_size, len(val_features))
-            batch_features = val_features[i:end]
+        for i in range(0, len(val_data), batch_size):
+            end = min(i + batch_size, len(val_data))
+            batch_data = val_data[i:end]
             batch_labels = val_labels[i:end]
             
-            # Forward pass (no dropout in eval mode)
-            logits = model(batch_features, adj_matrix, training=False)
+            # Forward pass
+            logits, _ = model(batch_data, return_embeddings=False)
             loss = mx.mean(nn.losses.cross_entropy(logits, batch_labels))
             
             # Track metrics
@@ -264,9 +202,9 @@ def main():
             
         # Calculate epoch metrics
         train_loss_avg = train_loss / train_batches
-        train_acc = train_correct / len(train_features)
+        train_acc = train_correct / len(train_data)
         val_loss_avg = val_loss / val_batches
-        val_acc = val_correct / len(val_features)
+        val_acc = val_correct / len(val_data)
         
         # Store history
         history['train_loss'].append(train_loss_avg)
@@ -275,7 +213,7 @@ def main():
         history['val_accuracy'].append(val_acc)
         
         # Print progress
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % 5 == 0 or epoch == 0:
             print(f"Epoch {epoch+1}/{num_epochs} - "
                   f"Train Loss: {train_loss_avg:.4f}, Train Acc: {train_acc:.4f} - "
                   f"Val Loss: {val_loss_avg:.4f}, Val Acc: {val_acc:.4f}")
@@ -289,15 +227,14 @@ def main():
     
     # Test on some examples
     print("\n6. Testing on sample predictions...")
-    model.eval()
     
     # Get a few validation samples
     test_samples = 5
-    test_features = val_features[:test_samples]
+    test_data = val_data[:test_samples]
     test_labels = val_labels[:test_samples]
     
     # Make predictions
-    logits = model(test_features, adj_matrix, training=False)
+    logits, _ = model(test_data, return_embeddings=False)
     predictions = mx.argmax(logits, axis=1)
     
     print("\nSample predictions:")
@@ -311,12 +248,12 @@ def main():
     all_predictions = []
     all_labels = []
     
-    for i in range(0, len(val_features), batch_size):
-        end = min(i + batch_size, len(val_features))
-        batch_features = val_features[i:end]
+    for i in range(0, len(val_data), batch_size):
+        end = min(i + batch_size, len(val_data))
+        batch_data = val_data[i:end]
         batch_labels = val_labels[i:end]
         
-        logits = model(batch_features, adj_matrix, training=False)
+        logits, _ = model(batch_data, return_embeddings=False)
         predictions = mx.argmax(logits, axis=1)
         
         all_predictions.extend(predictions.tolist())
@@ -342,7 +279,7 @@ def main():
     # Save model
     print("\n8. Saving trained model...")
     model_path = "simple_classification_model.npz"
-    mx.save(model_path, model.parameters())
+    mx.savez(model_path, **model.parameters())
     print(f"Model saved to {model_path}")
     
     print("\nExample completed successfully!")

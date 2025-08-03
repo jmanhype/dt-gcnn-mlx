@@ -2,6 +2,7 @@
 
 import mlx.core as mx
 import mlx.nn as nn
+import mlx.optimizers as optim
 import numpy as np
 import time
 import psutil
@@ -13,8 +14,8 @@ import matplotlib.pyplot as plt
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.models.dt_gcnn import DTGCNN
-from src.losses.triplet_loss import BatchHardTripletLoss
+from src.models import DTGCNN, create_model
+from src.losses.triplet_loss import TripletLoss
 
 
 class PerformanceBenchmark:
@@ -28,46 +29,38 @@ class PerformanceBenchmark:
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / 1024 / 1024  # MB
         
-    def benchmark_forward_pass(self, batch_sizes, seq_lengths, num_nodes_list):
+    def benchmark_forward_pass(self, batch_sizes, seq_lengths, vocab_sizes):
         """Benchmark forward pass with different configurations."""
         print("\n1. Forward Pass Benchmarks")
         print("=" * 60)
         
         results = []
         
-        for num_nodes in num_nodes_list:
+        for vocab_size in vocab_sizes:
             for seq_length in seq_lengths:
                 for batch_size in batch_sizes:
                     # Create model
-                    model = DTGCNN(
-                        num_nodes=num_nodes,
-                        input_dim=8,
-                        hidden_dims=[32, 64, 128],
-                        temporal_kernel_size=3,
-                        dilations=[1, 2, 4],
-                        num_classes=10,
-                        dropout=0.0  # No dropout for benchmarking
+                    model = create_model(
+                        preset="small",
+                        vocab_size=vocab_size,
+                        num_classes=4
                     )
                     
                     # Create dummy data
-                    adj = np.eye(num_nodes) + np.random.rand(num_nodes, num_nodes) * 0.1
-                    adj = adj / adj.sum(axis=1, keepdims=True)
-                    adj_matrix = mx.array(adj)
-                    
-                    features = mx.random.normal((batch_size, seq_length, num_nodes, 8))
+                    input_data = mx.random.randint(0, vocab_size, [batch_size, seq_length])
                     
                     # Warmup
                     for _ in range(3):
-                        _ = model(features, adj_matrix, training=False)
-                    mx.eval(model.parameters())
+                        logits, _ = model(input_data, return_embeddings=False)
+                        mx.eval(logits)
                     
                     # Measure time
                     start_time = time.time()
                     num_iterations = 10
                     
                     for _ in range(num_iterations):
-                        output = model(features, adj_matrix, training=False)
-                        mx.eval(output)
+                        logits, _ = model(input_data, return_embeddings=False)
+                        mx.eval(logits)
                         
                     elapsed_time = (time.time() - start_time) / num_iterations
                     throughput = batch_size / elapsed_time
@@ -76,7 +69,7 @@ class PerformanceBenchmark:
                     memory_used = self.measure_memory()
                     
                     result = {
-                        'num_nodes': num_nodes,
+                        'vocab_size': vocab_size,
                         'seq_length': seq_length,
                         'batch_size': batch_size,
                         'time_per_batch': elapsed_time,
@@ -86,7 +79,7 @@ class PerformanceBenchmark:
                     
                     results.append(result)
                     
-                    print(f"Nodes: {num_nodes:3d}, Seq: {seq_length:3d}, Batch: {batch_size:3d} | "
+                    print(f"Vocab: {vocab_size:5d}, Seq: {seq_length:3d}, Batch: {batch_size:3d} | "
                           f"Time: {elapsed_time*1000:6.2f}ms | "
                           f"Throughput: {throughput:6.1f} samples/s | "
                           f"Memory: {memory_used:6.1f} MB")
@@ -100,46 +93,41 @@ class PerformanceBenchmark:
         print("=" * 60)
         
         results = []
-        num_nodes = 20
-        seq_length = 30
+        vocab_size = 5000
+        seq_length = 128
         
         for batch_size in batch_sizes:
             # Create model
-            model = DTGCNN(
-                num_nodes=num_nodes,
-                input_dim=8,
-                hidden_dims=[32, 64, 128],
-                temporal_kernel_size=3,
-                dilations=[1, 2, 4],
-                num_classes=10,
-                dropout=0.3
+            model = create_model(
+                preset="small",
+                vocab_size=vocab_size,
+                num_classes=4
             )
             
-            # Create dummy data
-            adj = np.eye(num_nodes) + np.random.rand(num_nodes, num_nodes) * 0.1
-            adj = adj / adj.sum(axis=1, keepdims=True)
-            adj_matrix = mx.array(adj)
+            optimizer = optim.Adam(learning_rate=0.001)
             
-            features = mx.random.normal((batch_size, seq_length, num_nodes, 8))
-            labels = mx.array(np.random.randint(0, 10, batch_size))
+            # Create dummy data
+            input_data = mx.random.randint(0, vocab_size, [batch_size, seq_length])
+            labels = mx.random.randint(0, 4, [batch_size])
             
             # Define loss function
-            def loss_fn(model, features, adj, labels):
-                logits = model(features, adj, training=True)
+            def loss_fn(params):
+                logits, _ = model(input_data, return_embeddings=False)
                 return mx.mean(nn.losses.cross_entropy(logits, labels))
                 
             # Warmup
             for _ in range(3):
-                _, grads = mx.value_and_grad(loss_fn)(model, features, adj_matrix, labels)
-                mx.eval(grads)
+                loss, grads = mx.value_and_grad(loss_fn)(model.parameters())
+                mx.eval(loss, grads)
                 
             # Measure time
             start_time = time.time()
             num_iterations = 10
             
             for _ in range(num_iterations):
-                loss, grads = mx.value_and_grad(loss_fn)(model, features, adj_matrix, labels)
-                mx.eval(loss, grads)
+                loss, grads = mx.value_and_grad(loss_fn)(model.parameters())
+                optimizer.update(model, grads)
+                mx.eval(model.parameters(), optimizer.state)
                 
             elapsed_time = (time.time() - start_time) / num_iterations
             throughput = batch_size / elapsed_time
@@ -170,21 +158,20 @@ class PerformanceBenchmark:
         print("=" * 60)
         
         results = []
-        embedding_dim = 128
+        embedding_dim = 64
         
         for batch_size in batch_sizes:
-            # Create embeddings and labels
-            embeddings = mx.random.normal((batch_size, embedding_dim))
-            # Ensure balanced classes for triplet mining
-            num_classes = min(4, batch_size // 4)
-            labels = mx.array([i % num_classes for i in range(batch_size)])
+            # Create triplet embeddings
+            anchor = mx.random.normal((batch_size, embedding_dim))
+            positive = mx.random.normal((batch_size, embedding_dim))
+            negative = mx.random.normal((batch_size, embedding_dim))
             
             # Create loss function
-            triplet_loss = BatchHardTripletLoss(margin=0.3)
+            triplet_loss = TripletLoss(margin=0.3)
             
             # Warmup
             for _ in range(5):
-                loss = triplet_loss(embeddings, labels)
+                loss = triplet_loss(anchor, positive, negative)
                 mx.eval(loss)
                 
             # Measure time
@@ -192,7 +179,7 @@ class PerformanceBenchmark:
             num_iterations = 50
             
             for _ in range(num_iterations):
-                loss = triplet_loss(embeddings, labels)
+                loss = triplet_loss(anchor, positive, negative)
                 mx.eval(loss)
                 
             elapsed_time = (time.time() - start_time) / num_iterations
@@ -200,7 +187,7 @@ class PerformanceBenchmark:
             result = {
                 'batch_size': batch_size,
                 'time_ms': elapsed_time * 1000,
-                'triplets_per_second': (batch_size * batch_size) / elapsed_time
+                'triplets_per_second': batch_size / elapsed_time
             }
             
             results.append(result)
@@ -219,50 +206,43 @@ class PerformanceBenchmark:
         
         results = []
         configurations = [
-            {'name': 'Small', 'hidden_dims': [16, 32], 'dilations': [1, 2]},
-            {'name': 'Medium', 'hidden_dims': [32, 64, 128], 'dilations': [1, 2, 4]},
-            {'name': 'Large', 'hidden_dims': [64, 128, 256, 512], 'dilations': [1, 2, 4, 8]},
-            {'name': 'XLarge', 'hidden_dims': [128, 256, 512, 1024], 'dilations': [1, 2, 4, 8, 16]}
+            {'name': 'Small', 'preset': 'small'},
+            {'name': 'Base', 'preset': 'base'},
+            {'name': 'Large', 'preset': 'large'}
         ]
         
-        num_nodes = 20
+        vocab_size = 5000
         batch_size = 16
-        seq_length = 30
+        seq_length = 128
         
         for config in configurations:
             # Create model
-            model = DTGCNN(
-                num_nodes=num_nodes,
-                input_dim=8,
-                hidden_dims=config['hidden_dims'],
-                temporal_kernel_size=3,
-                dilations=config['dilations'],
-                num_classes=10,
-                dropout=0.0
+            model = create_model(
+                preset=config['preset'],
+                vocab_size=vocab_size,
+                num_classes=4
             )
             
             # Count parameters
-            total_params = sum(p.size for p in model.parameters().values())
+            total_params = sum(param.size if hasattr(param, 'size') else len(param) for param in model.parameters().values())
             param_memory = total_params * 4 / 1024 / 1024  # MB (float32)
             
             # Create dummy data
-            adj = np.eye(num_nodes)
-            adj_matrix = mx.array(adj)
-            features = mx.random.normal((batch_size, seq_length, num_nodes, 8))
+            input_data = mx.random.randint(0, vocab_size, [batch_size, seq_length])
             
             # Measure forward pass time
             start_time = time.time()
             num_iterations = 20
             
             for _ in range(num_iterations):
-                output = model(features, adj_matrix, training=False)
-                mx.eval(output)
+                logits, _ = model(input_data, return_embeddings=False)
+                mx.eval(logits)
                 
             elapsed_time = (time.time() - start_time) / num_iterations
             
             result = {
                 'name': config['name'],
-                'hidden_dims': config['hidden_dims'],
+                'preset': config['preset'],
                 'total_parameters': total_params,
                 'param_memory_mb': param_memory,
                 'inference_time_ms': elapsed_time * 1000,
@@ -288,17 +268,17 @@ class PerformanceBenchmark:
         if 'forward_pass' in self.results:
             plt.figure(figsize=(10, 6))
             
-            # Group by number of nodes
-            data_by_nodes = defaultdict(list)
+            # Group by vocab size
+            data_by_vocab = defaultdict(list)
             for result in self.results['forward_pass']:
-                if result['seq_length'] == 30:  # Fix sequence length
-                    data_by_nodes[result['num_nodes']].append(result)
+                if result['seq_length'] == 128:  # Fix sequence length
+                    data_by_vocab[result['vocab_size']].append(result)
                     
-            for num_nodes, results in sorted(data_by_nodes.items()):
+            for vocab_size, results in sorted(data_by_vocab.items()):
                 batch_sizes = [r['batch_size'] for r in results]
                 throughputs = [r['samples_per_second'] for r in results]
                 plt.plot(batch_sizes, throughputs, marker='o', 
-                        label=f'{num_nodes} nodes')
+                        label=f'Vocab {vocab_size}')
                 
             plt.xlabel('Batch Size')
             plt.ylabel('Throughput (samples/second)')
@@ -351,11 +331,12 @@ class PerformanceBenchmark:
             print(f"\nPeak Inference Throughput: {max_throughput:.1f} samples/second")
             
         if 'model_sizes' in self.results:
-            large_model = next(r for r in self.results['model_sizes'] if r['name'] == 'Large')
-            print(f"\nLarge Model Performance:")
-            print(f"- Parameters: {large_model['total_parameters']:,}")
-            print(f"- Inference time: {large_model['inference_time_ms']:.2f} ms/batch")
-            print(f"- Throughput: {large_model['throughput']:.1f} samples/s")
+            large_model = next((r for r in self.results['model_sizes'] if r['name'] == 'Large'), None)
+            if large_model:
+                print(f"\nLarge Model Performance:")
+                print(f"- Parameters: {large_model['total_parameters']:,}")
+                print(f"- Inference time: {large_model['inference_time_ms']:.2f} ms/batch")
+                print(f"- Throughput: {large_model['throughput']:.1f} samples/s")
             
         print("\nBenchmark completed successfully!")
 
@@ -372,10 +353,10 @@ def main():
     
     # 1. Forward pass benchmarks
     batch_sizes = [1, 4, 8, 16, 32, 64]
-    seq_lengths = [20, 30, 50]
-    num_nodes_list = [10, 20, 30]
+    seq_lengths = [64, 128, 256]
+    vocab_sizes = [1000, 5000, 10000]
     
-    benchmark.benchmark_forward_pass(batch_sizes, seq_lengths, num_nodes_list)
+    benchmark.benchmark_forward_pass(batch_sizes, seq_lengths, vocab_sizes)
     
     # 2. Backward pass benchmarks
     batch_sizes_train = [4, 8, 16, 32]

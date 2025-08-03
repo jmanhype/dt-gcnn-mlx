@@ -1,4 +1,4 @@
-"""Triplet learning demonstration using DT-GCNN for graph embeddings."""
+"""Triplet learning demonstration using DT-GCNN for text embeddings."""
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -12,107 +12,70 @@ import os
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.models.dt_gcnn import DTGCNN
-from src.losses.triplet_loss import BatchHardTripletLoss, BatchAllTripletLoss
-from src.data.preprocessing import normalize_adjacency_matrix
+from src.models import DTGCNN, create_model
+from src.losses.triplet_loss import TripletLoss
+from src.losses.mining_strategies import BatchHardMiner
+from src.data import create_sample_data, TripletDataset, create_data_loader
 
 
-def generate_graph_patterns(num_samples_per_class=50, num_nodes=15, num_features=6,
-                           seq_length=20, num_classes=4):
-    """Generate distinct graph temporal patterns for each class."""
+def generate_text_patterns(num_samples_per_class=50, vocab_size=5000, seq_length=128, num_classes=4):
+    """Generate distinct text patterns for each class."""
     
-    # Create a simple ring graph with shortcuts
-    adj = np.eye(num_nodes)
-    
-    # Ring connections
-    for i in range(num_nodes):
-        adj[i, (i + 1) % num_nodes] = 1
-        adj[(i + 1) % num_nodes, i] = 1
-        
-    # Add some shortcuts
-    for i in range(0, num_nodes, 3):
-        j = (i + num_nodes // 2) % num_nodes
-        adj[i, j] = adj[j, i] = 0.5
-        
-    # Normalize
-    adj = adj / adj.sum(axis=1, keepdims=True)
-    
-    # Generate distinct patterns for each class
-    features = []
+    data = []
     labels = []
     
     for class_id in range(num_classes):
         for _ in range(num_samples_per_class):
-            # Time array
-            t = np.linspace(0, 2 * np.pi, seq_length)
-            
-            # Create class-specific patterns
-            node_features = np.zeros((seq_length, num_nodes, num_features))
-            
             if class_id == 0:
-                # Propagating wave pattern
-                for node in range(num_nodes):
-                    phase = 2 * np.pi * node / num_nodes
-                    for feat in range(num_features):
-                        node_features[:, node, feat] = (
-                            np.sin(t + phase + feat * 0.5) + 
-                            np.random.randn(seq_length) * 0.1
-                        )
-                        
+                # Short sequences with high frequency words (1-1000)
+                seq_len = np.random.randint(seq_length//4, seq_length//2)
+                sequence = np.random.randint(1, vocab_size//5, seq_len).tolist()
+                sequence.extend([0] * (seq_length - len(sequence)))
+                
             elif class_id == 1:
-                # Synchronized oscillation pattern
-                base_signal = np.cos(2 * t) + 0.5 * np.cos(4 * t)
-                for node in range(num_nodes):
-                    for feat in range(num_features):
-                        node_features[:, node, feat] = (
-                            base_signal * (1 + node * 0.05) + 
-                            np.random.randn(seq_length) * 0.1
-                        )
-                        
+                # Medium sequences with medium frequency words (1000-2500)
+                seq_len = np.random.randint(seq_length//2, 3*seq_length//4)
+                sequence = np.random.randint(vocab_size//5, vocab_size//2, seq_len).tolist()
+                sequence.extend([0] * (seq_length - len(sequence)))
+                
             elif class_id == 2:
-                # Localized activity pattern
-                active_nodes = np.random.choice(num_nodes, size=num_nodes//3, replace=False)
-                for node in active_nodes:
-                    for feat in range(num_features):
-                        node_features[:, node, feat] = (
-                            np.exp(-((t - np.pi) ** 2) / 0.5) * (1 + feat * 0.2) +
-                            np.random.randn(seq_length) * 0.1
-                        )
-                        
+                # Long sequences with mixed frequency words
+                seq_len = np.random.randint(3*seq_length//4, seq_length)
+                sequence = np.random.randint(vocab_size//2, vocab_size, seq_len).tolist()
+                sequence.extend([0] * (seq_length - len(sequence)))
+                
             else:
-                # Chaotic pattern
-                for node in range(num_nodes):
-                    x = np.random.randn()
-                    for i in range(1, seq_length):
-                        # Logistic map
-                        x = 3.9 * x * (1 - x)
-                        for feat in range(num_features):
-                            node_features[i, node, feat] = (
-                                x + np.random.randn() * 0.1
-                            )
-                            
-            features.append(node_features)
+                # Random patterns with repeated tokens
+                base_tokens = np.random.randint(1, vocab_size//10, 10)
+                sequence = []
+                for _ in range(seq_length):
+                    if np.random.random() < 0.7:
+                        sequence.append(np.random.choice(base_tokens))
+                    else:
+                        sequence.append(np.random.randint(1, vocab_size))
+                        
+            data.append(sequence)
             labels.append(class_id)
             
-    return np.array(features), np.array(labels), adj
+    return np.array(data), np.array(labels)
 
 
 def visualize_embeddings(embeddings, labels, title="Embeddings Visualization"):
     """Visualize embeddings using t-SNE."""
     # Convert to numpy if needed
-    if hasattr(embeddings, 'numpy'):
-        embeddings = np.array(embeddings)
-    if hasattr(labels, 'numpy'):
-        labels = np.array(labels)
+    if hasattr(embeddings, 'tolist'):
+        embeddings = np.array(embeddings.tolist())
+    if hasattr(labels, 'tolist'):
+        labels = np.array(labels.tolist())
         
     # Apply t-SNE
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(embeddings)//4))
     embeddings_2d = tsne.fit_transform(embeddings)
     
     # Plot
     plt.figure(figsize=(10, 8))
     colors = ['red', 'blue', 'green', 'orange', 'purple']
-    class_names = ['Wave', 'Synchronized', 'Localized', 'Chaotic']
+    class_names = ['Short-High', 'Medium-Med', 'Long-Low', 'Repeated']
     
     for class_id in np.unique(labels):
         mask = labels == class_id
@@ -131,8 +94,15 @@ def visualize_embeddings(embeddings, labels, title="Embeddings Visualization"):
 
 def compute_embedding_statistics(embeddings, labels):
     """Compute statistics about embedding quality."""
-    embeddings_np = np.array(embeddings)
-    labels_np = np.array(labels)
+    if hasattr(embeddings, 'tolist'):
+        embeddings_np = np.array(embeddings.tolist())
+    else:
+        embeddings_np = np.array(embeddings)
+        
+    if hasattr(labels, 'tolist'):
+        labels_np = np.array(labels.tolist())
+    else:
+        labels_np = np.array(labels)
     
     # Intra-class distances
     intra_distances = []
@@ -161,10 +131,11 @@ def compute_embedding_statistics(embeddings, labels):
                         dist = np.linalg.norm(emb1 - emb2)
                         inter_distances.append(dist)
                         
-    print("\nEmbedding Statistics:")
-    print(f"Average intra-class distance: {np.mean(intra_distances):.4f} (±{np.std(intra_distances):.4f})")
-    print(f"Average inter-class distance: {np.mean(inter_distances):.4f} (±{np.std(inter_distances):.4f})")
-    print(f"Separation ratio: {np.mean(inter_distances) / np.mean(intra_distances):.4f}")
+    if intra_distances and inter_distances:
+        print("\nEmbedding Statistics:")
+        print(f"Average intra-class distance: {np.mean(intra_distances):.4f} (±{np.std(intra_distances):.4f})")
+        print(f"Average inter-class distance: {np.mean(inter_distances):.4f} (±{np.std(inter_distances):.4f})")
+        print(f"Separation ratio: {np.mean(inter_distances) / np.mean(intra_distances):.4f}")
 
 
 def main():
@@ -177,72 +148,64 @@ def main():
     mx.random.seed(42)
     
     # Generate data
-    print("\n1. Generating graph pattern data...")
-    num_samples_per_class = 40
+    print("\n1. Generating text pattern data...")
+    num_samples_per_class = 50
     num_classes = 4
-    num_nodes = 15
-    num_features = 6
-    seq_length = 20
-    embedding_dim = 128
+    vocab_size = 5000
+    seq_length = 128
+    embedding_dim = 64
     
-    features, labels, adj = generate_graph_patterns(
+    data, labels = generate_text_patterns(
         num_samples_per_class=num_samples_per_class,
-        num_nodes=num_nodes,
-        num_features=num_features,
+        vocab_size=vocab_size,
         seq_length=seq_length,
         num_classes=num_classes
     )
     
-    print(f"   Total samples: {len(features)}")
+    print(f"   Total samples: {len(data)}")
     print(f"   Classes: {num_classes}")
     print(f"   Samples per class: {num_samples_per_class}")
     
     # Convert to MLX
-    features = mx.array(features)
+    data = mx.array(data)
     labels = mx.array(labels)
-    adj_matrix = mx.array(adj)
     
     # Split data
-    train_size = int(0.8 * len(features))
-    indices = np.random.permutation(len(features))
+    train_size = int(0.8 * len(data))
+    indices = mx.array(np.random.permutation(len(data)))
     
-    train_features = features[indices[:train_size]]
+    train_data = data[indices[:train_size]]
     train_labels = labels[indices[:train_size]]
-    val_features = features[indices[train_size:]]
+    val_data = data[indices[train_size:]]
     val_labels = labels[indices[train_size:]]
     
     print(f"\n2. Data split:")
-    print(f"   Training samples: {len(train_features)}")
-    print(f"   Validation samples: {len(val_features)}")
+    print(f"   Training samples: {len(train_data)}")
+    print(f"   Validation samples: {len(val_data)}")
     
     # Create model
     print("\n3. Creating DT-GCNN model for embeddings...")
-    model = DTGCNN(
-        num_nodes=num_nodes,
-        input_dim=num_features,
-        hidden_dims=[32, 64, 128],
-        temporal_kernel_size=3,
-        dilations=[1, 2, 4],
-        num_classes=embedding_dim,  # Output embedding dimension
-        dropout=0.3,
-        use_embeddings=True  # No final classification layer
+    model = create_model(
+        preset="small",
+        vocab_size=vocab_size,
+        num_classes=num_classes
     )
     
     # Setup training
     print("\n4. Setting up triplet loss training...")
-    triplet_loss = BatchHardTripletLoss(margin=0.3)
+    triplet_loss = TripletLoss(margin=0.3)
+    miner = BatchHardMiner()
     optimizer = optim.Adam(learning_rate=0.001)
     
     # Get initial embeddings
     print("\n5. Computing initial embeddings...")
-    model.eval()
-    initial_embeddings = model.get_embeddings(val_features, adj_matrix)
+    initial_embeddings = model.get_embeddings(val_data)
     visualize_embeddings(initial_embeddings, val_labels, "Initial Embeddings (Untrained)")
     compute_embedding_statistics(initial_embeddings, val_labels)
     
     # Training
-    batch_size = 32  # Should have multiple samples per class
-    num_epochs = 100
+    batch_size = 32
+    num_epochs = 50
     
     print(f"\n6. Training with triplet loss for {num_epochs} epochs...")
     print("-" * 50)
@@ -252,39 +215,40 @@ def main():
     
     for epoch in range(num_epochs):
         # Training
-        model.train()
         epoch_loss = 0
         num_batches = 0
         
-        # Shuffle data while keeping class balance
-        for start_idx in range(0, len(train_features) - batch_size + 1, batch_size):
-            # Get balanced batch (ensure multiple samples per class)
-            batch_indices = []
-            samples_per_class = batch_size // num_classes
-            
-            for class_id in range(num_classes):
-                class_indices = np.where(np.array(train_labels) == class_id)[0]
-                selected = np.random.choice(class_indices, 
-                                          size=min(samples_per_class, len(class_indices)),
-                                          replace=False)
-                batch_indices.extend(selected)
-                
-            if len(batch_indices) < 4:  # Need at least 4 samples
-                continue
-                
-            batch_features = train_features[batch_indices]
-            batch_labels = train_labels[batch_indices]
+        # Mini-batch training
+        for start_idx in range(0, len(train_data) - batch_size + 1, batch_size):
+            batch_data = train_data[start_idx:start_idx + batch_size]
+            batch_labels = train_labels[start_idx:start_idx + batch_size]
             
             # Forward pass
-            def loss_fn(model, features, adj, labels):
-                embeddings = model.get_embeddings(features, adj)
-                loss = triplet_loss(embeddings, labels)
+            def loss_fn(params):
+                embeddings = model.get_embeddings(batch_data)
+                
+                # Mine triplets
+                triplets, stats = miner.mine(embeddings, batch_labels)
+                
+                if len(triplets) == 0:
+                    return mx.array(0.0)
+                
+                # Extract triplet indices
+                anchor_idx = mx.array([t[0] for t in triplets])
+                positive_idx = mx.array([t[1] for t in triplets])
+                negative_idx = mx.array([t[2] for t in triplets])
+                
+                # Get triplet embeddings
+                anchor_emb = embeddings[anchor_idx]
+                positive_emb = embeddings[positive_idx]
+                negative_emb = embeddings[negative_idx]
+                
+                # Compute triplet loss
+                loss = triplet_loss(anchor_emb, positive_emb, negative_emb)
                 return loss
                 
             # Compute loss and gradients
-            loss, grads = mx.value_and_grad(loss_fn)(
-                model, batch_features, adj_matrix, batch_labels
-            )
+            loss, grads = mx.value_and_grad(loss_fn)(model.parameters())
             
             # Update
             optimizer.update(model, grads)
@@ -294,9 +258,21 @@ def main():
             num_batches += 1
             
         # Validation
-        model.eval()
-        val_embeddings = model.get_embeddings(val_features, adj_matrix)
-        val_loss = triplet_loss(val_embeddings, val_labels)
+        val_embeddings = model.get_embeddings(val_data)
+        val_triplets, _ = miner.mine(val_embeddings, val_labels)
+        
+        if len(val_triplets) > 0:
+            anchor_idx = mx.array([t[0] for t in val_triplets])
+            positive_idx = mx.array([t[1] for t in val_triplets])
+            negative_idx = mx.array([t[2] for t in val_triplets])
+            
+            anchor_emb = val_embeddings[anchor_idx]
+            positive_emb = val_embeddings[positive_idx]
+            negative_emb = val_embeddings[negative_idx]
+            
+            val_loss = triplet_loss(anchor_emb, positive_emb, negative_emb)
+        else:
+            val_loss = mx.array(0.0)
         
         # Record losses
         avg_train_loss = epoch_loss / max(num_batches, 1)
@@ -304,7 +280,7 @@ def main():
         val_losses.append(val_loss.item())
         
         # Print progress
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"Epoch {epoch+1}/{num_epochs} - "
                   f"Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss.item():.4f}")
             
@@ -312,8 +288,7 @@ def main():
     
     # Get final embeddings
     print("\n7. Computing final embeddings...")
-    model.eval()
-    final_embeddings = model.get_embeddings(val_features, adj_matrix)
+    final_embeddings = model.get_embeddings(val_data)
     visualize_embeddings(final_embeddings, val_labels, "Final Embeddings (Trained)")
     compute_embedding_statistics(final_embeddings, val_labels)
     
@@ -333,7 +308,7 @@ def main():
     print("\n8. Demonstrating similarity search...")
     
     # Get all embeddings
-    all_embeddings = model.get_embeddings(features, adj_matrix)
+    all_embeddings = model.get_embeddings(data)
     
     # Pick a query sample
     query_idx = 0
@@ -360,7 +335,7 @@ def main():
     # Save model
     print("\n9. Saving trained model...")
     model_path = "triplet_model.npz"
-    mx.save(model_path, model.parameters())
+    mx.savez(model_path, **model.parameters())
     print(f"Model saved to {model_path}")
     
     print("\nTriplet learning demo completed successfully!")
