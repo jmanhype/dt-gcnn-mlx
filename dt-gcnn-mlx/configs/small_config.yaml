@@ -1,0 +1,47 @@
+# Small configuration for testing and development
+
+# Model parameters
+num_vertices: 1723
+embedding_dim: 128  # Smaller embedding
+num_classes: 10
+
+# Training parameters
+batch_size: 16  # Smaller batch
+num_epochs: 20  # Fewer epochs
+learning_rate: 0.001
+weight_decay: 0.0001
+gradient_clip: 1.0
+
+# Loss weights
+classification_weight: 1.0
+triplet_weight: 0.5  # Less emphasis on triplet
+triplet_margin: 0.3
+
+# Learning rate scheduler
+scheduler_type: step
+warmup_epochs: 2
+min_lr: 0.0001
+
+# Early stopping
+patience: 5
+min_delta: 0.001
+
+# Checkpointing
+save_frequency: 5
+keep_best_n: 2
+
+# Hardware settings
+use_metal: true
+jit_compile: true
+mixed_precision: false
+
+# Data augmentation
+augmentation:
+  rotation_range: 15.0
+  scale_range: [0.95, 1.05]
+  noise_std: 0.005
+  flip_probability: 0.3
+
+# Logging
+verbose: true
+log_interval: 5

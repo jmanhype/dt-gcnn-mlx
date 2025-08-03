@@ -1,0 +1,25 @@
+# Core dependencies
+mlx>=0.9.0
+numpy>=1.24.0
+torch>=2.0.0
+transformers>=4.30.0
+sentencepiece>=0.1.99
+
+# Graph and ML utilities
+networkx>=3.0
+scikit-learn>=1.3.0
+scipy>=1.10.0
+
+# Data processing
+pandas>=2.0.0
+pyyaml>=6.0
+
+# Progress and logging
+tqdm>=4.65.0
+rich>=13.0.0
+
+# Visualization (optional but recommended)
+matplotlib>=3.5.0
+
+# Type hints
+typing-extensions>=4.5.0

@@ -1,0 +1,47 @@
+# Default training configuration for DT-GCNN
+
+# Model parameters
+num_vertices: 1723
+embedding_dim: 256
+num_classes: 10
+
+# Training parameters
+batch_size: 32
+num_epochs: 100
+learning_rate: 0.001
+weight_decay: 0.0001
+gradient_clip: 1.0
+
+# Loss weights
+classification_weight: 1.0
+triplet_weight: 1.0
+triplet_margin: 0.5
+
+# Learning rate scheduler
+scheduler_type: cosine  # Options: cosine, step, exponential
+warmup_epochs: 5
+min_lr: 0.000001
+
+# Early stopping
+patience: 10
+min_delta: 0.0001
+
+# Checkpointing
+save_frequency: 5
+keep_best_n: 3
+
+# Hardware settings
+use_metal: true
+jit_compile: true
+mixed_precision: false
+
+# Data augmentation
+augmentation:
+  rotation_range: 30.0
+  scale_range: [0.9, 1.1]
+  noise_std: 0.01
+  flip_probability: 0.5
+
+# Logging
+verbose: true
+log_interval: 10
