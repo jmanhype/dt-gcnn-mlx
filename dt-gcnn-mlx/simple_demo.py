@@ -48,12 +48,10 @@ def main():
     gru_out = gru(embedded)
     print(f"✓ GRU: {embedded.shape} → {gru_out.shape}")
     
-    # 1D convolution
+    # 1D convolution (MLX uses channels-last: [N, L, C])
     conv = nn.Conv1d(embed_dim, 64, kernel_size=3, padding=1)
-    # Transpose for conv1d (expects channels first: [N, C, L])
-    conv_input = mx.transpose(embedded, (0, 2, 1))
-    conv_out = conv(conv_input)
-    print(f"✓ Conv1D: {conv_input.shape} → {conv_out.shape}")
+    conv_out = conv(embedded)  # MLX Conv1d expects [N, L, C]
+    print(f"✓ Conv1D: {embedded.shape} → {conv_out.shape}")
     
     # Linear layer
     linear = nn.Linear(64, 4)  # 4 classes
