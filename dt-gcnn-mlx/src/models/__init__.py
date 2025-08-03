@@ -14,13 +14,17 @@ from .dt_gcnn import (
     ProjectionHead
 )
 
+# For backward compatibility
+ModelConfig = dict
+
 __all__ = [
     'DTGCNN',
     'BidirectionalGRU',
-    'GRUCell',
+    'GRUCell', 
     'Conv1DBlock',
     'GlobalMaxPool1D',
-    'ProjectionHead'
+    'ProjectionHead',
+    'ModelConfig'
 ]
 
 # Model configuration presets

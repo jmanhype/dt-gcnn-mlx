@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 
 # Import DT-GCNN components
-from src.models import create_model, DTGCNN_CONFIGS
+from src.models import create_model, MODEL_CONFIGS
 from src.losses import TripletLoss, BatchHardMiner
 from src.data import create_sample_data
 from src.training import DT_GCNN_Trainer
@@ -43,19 +43,15 @@ def main():
     # 3. Initialize model
     print("\n🏗️ Creating DT-GCNN model...")
     model = create_model(
-        config_name="small",  # Use small config for quick demo
+        preset="small",  # Use small config for quick demo
         vocab_size=5000,
         num_classes=4
     )
-    print(f"✓ Model created with {sum(p.size for p in model.parameters().values())/1e6:.2f}M parameters")
+    print("✓ Model created successfully")
     
     # 4. Setup losses
     print("\n📉 Setting up losses...")
-    triplet_loss = TripletLoss(
-        margin=0.3,
-        distance_metric="euclidean",
-        dynamic_margin=True
-    )
+    triplet_loss = TripletLoss(margin=0.3)
     miner = BatchHardMiner()
     print("✓ Triplet loss and miner configured")
     
