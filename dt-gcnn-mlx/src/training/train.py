@@ -18,9 +18,9 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from models.dt_gcnn import DT_GCNN
-from training.trainer import DT_GCNN_Trainer, TrainingConfig
-from training.data_loader import MeshDataLoader, create_data_loaders
+from ..models.dt_gcnn import DT_GCNN
+from .trainer import DT_GCNN_Trainer, TrainingConfig
+from .data_loader import MeshDataLoader, create_data_loaders
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -42,8 +42,17 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
-def setup_logging(output_dir: Path, verbose: bool = True):
-    """Setup logging configuration"""
+def setup_logging(output_dir: Path, verbose: bool = True) -> logging.Logger:
+    """
+    Setup logging configuration.
+
+    Args:
+        output_dir: Directory to write log files
+        verbose: Enable verbose logging (INFO level)
+
+    Returns:
+        logging.Logger: Configured logger instance
+    """
     log_level = logging.INFO if verbose else logging.WARNING
     
     # Create logs directory
@@ -65,18 +74,36 @@ def setup_logging(output_dir: Path, verbose: bool = True):
     return logging.getLogger(__name__)
 
 
-def validate_gpu_setup():
-    """Validate GPU/Metal setup"""
-    if mx.metal.is_available():
-        # Get Metal device info
-        memory_gb = mx.metal.get_active_memory() / 1e9
-        logging.info(f"Metal GPU available - Current memory: {memory_gb:.2f} GB")
-        
-        # Set memory limit to prevent crashes
-        mx.metal.set_memory_limit(8 * 1024 * 1024 * 1024)  # 8GB
-        return True
-    else:
-        logging.warning("Metal GPU not available - using CPU")
+def validate_gpu_setup() -> bool:
+    """
+    Validate GPU/Metal setup.
+
+    Returns:
+        bool: True if Metal GPU is available, False otherwise
+    """
+    try:
+        if hasattr(mx, 'metal') and mx.metal.is_available():
+            # Get Metal device info
+            try:
+                memory_gb = mx.metal.get_active_memory() / 1e9
+                logging.info(f"Metal GPU available - Current memory: {memory_gb:.2f} GB")
+            except (AttributeError, RuntimeError) as e:
+                logging.warning(f"Could not get Metal memory info: {e}")
+                logging.info("Metal GPU available")
+
+            # Set memory limit to prevent crashes
+            try:
+                mx.metal.set_memory_limit(8 * 1024 * 1024 * 1024)  # 8GB
+            except (AttributeError, RuntimeError) as e:
+                logging.warning(f"Could not set Metal memory limit: {e}")
+
+            return True
+        else:
+            logging.warning("Metal GPU not available - using CPU")
+            return False
+    except Exception as e:
+        logging.error(f"Error validating GPU setup: {e}")
+        logging.warning("Falling back to CPU")
         return False
 
 
@@ -102,8 +129,13 @@ def create_model(config: TrainingConfig) -> DT_GCNN:
     return model
 
 
-def train_model(args):
-    """Main training function"""
+def train_model(args: argparse.Namespace) -> None:
+    """
+    Main training function.
+
+    Args:
+        args: Command-line arguments parsed by argparse
+    """
     # Setup output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
@@ -231,8 +263,8 @@ def train_model(args):
         raise
 
 
-def main():
-    """Main entry point"""
+def main() -> None:
+    """Main entry point for command-line interface."""
     parser = argparse.ArgumentParser(description="Train DT-GCNN model")
     
     # Data arguments
