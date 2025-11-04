@@ -6,11 +6,11 @@ This script demonstrates how to use the triplet loss components with MLX.
 
 import mlx.core as mx
 import mlx.nn as nn
-from triplet_loss import TripletLoss, pairwise_distance, euclidean_distance, cosine_distance
-from mining_strategies import BatchHardMiner, OnlineTripletMiner, MiningStatistics
+from .triplet_loss import TripletLoss, pairwise_distance, euclidean_distance, cosine_distance
+from .mining_strategies import BatchHardMiner, OnlineTripletMiner, MiningStatistics
 
 
-def test_distance_functions():
+def test_distance_functions() -> None:
     """Test distance computation functions."""
     print("Testing distance functions...")
     
@@ -38,7 +38,7 @@ def test_distance_functions():
     print("\n✓ Distance functions test passed!")
 
 
-def test_triplet_loss():
+def test_triplet_loss() -> None:
     """Test triplet loss computation."""
     print("\nTesting triplet loss...")
     
@@ -83,7 +83,7 @@ def test_triplet_loss():
     print("\n✓ Triplet loss test passed!")
 
 
-def test_batch_hard_mining():
+def test_batch_hard_mining() -> None:
     """Test batch-hard mining strategy."""
     print("\nTesting batch-hard mining...")
     
@@ -124,7 +124,7 @@ def test_batch_hard_mining():
     print("\n✓ Batch-hard mining test passed!")
 
 
-def test_online_mining_strategies():
+def test_online_mining_strategies() -> None:
     """Test different online mining strategies."""
     print("\nTesting online mining strategies...")
     
@@ -148,7 +148,7 @@ def test_online_mining_strategies():
     print("\n✓ Online mining test passed!")
 
 
-def test_integrated_workflow():
+def test_integrated_workflow() -> None:
     """Test complete workflow with loss and mining."""
     print("\nTesting integrated workflow...")
     
@@ -183,7 +183,7 @@ def test_integrated_workflow():
     print("\n✓ Integrated workflow test passed!")
 
 
-def main():
+def main() -> None:
     """Run all tests."""
     print("=" * 60)
     print("Testing DT-GCNN Triplet Loss Components")
